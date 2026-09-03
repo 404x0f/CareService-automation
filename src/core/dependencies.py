@@ -1,15 +1,35 @@
-from collections.abc import AsyncGenerator
+from typing import Annotated, AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from src.core.settings import settings
 
-engine = create_async_engine(settings.database_url, echo=True)
-AsyncSessionLocal = async_sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
+async_engine = create_async_engine(
+    url=settings.database_url,
+    pool_size=5,
+    pool_pre_ping=True,
+    echo=True,
+    echo_pool=True,
+    max_overflow=10,
+)
+
+session_maker: async_sessionmaker[AsyncSession] = async_sessionmaker(
+    bind=async_engine,
+    expire_on_commit=False,
+    autoflush=False,
+    autocommit=False,
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """Получение асинхронной сессии."""
+    session = session_maker()
+    try:
         yield session
+    finally:
+        await session.close()
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+

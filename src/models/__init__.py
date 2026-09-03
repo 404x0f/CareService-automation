@@ -1,1 +1,1 @@
-__all__: list[str] = []
+from .avito import AvitoChat  # noqa
