@@ -5,8 +5,8 @@ from sqlalchemy import select
 
 from src.core.dependencies import SessionDep
 from src.core.settings import settings
-from src.models.avito import AvitoChat
-from src.services.avito import send_messages
+# from src.models.avito import AvitoChat
+from src.services.avito import send_messages, has_replied, read_chat
 
 router = APIRouter(
     prefix="/api/avito",
@@ -29,38 +29,6 @@ async def avito_webhook(data: dict[str, Any],
 
     chat_id = message["chat_id"]
 
-    # Проверяем, есть ли уже такой чат
-    result = await session.execute(
-        select(AvitoChat).where(
-            AvitoChat.chat_id == chat_id
-        )
-    )
-
-    chat = result.scalar_one_or_none()
-
-    if chat:
-        # Клиент уже писал раньше
-        return {"ok": True}
-
-    # Это первое сообщение клиента
-    text = message.get("content", {}).get("text", "")
-
-    chat = AvitoChat(
-        chat_id=chat_id,
-        client_id=message["author_id"],
-        item_id=message["item_id"],
-        first_message=text,
-    )
-
-    session.add(chat)
-    await session.commit()
-
-    print("ПЕРВОЕ СООБЩЕНИЕ КЛИЕНТА:")
-    print(text)
-
-    # Здесь дальше твоя логика
-    # await send_message(...)
-
     return {"status": "ok"}
 
 
@@ -69,3 +37,12 @@ async def send_message():
     await send_messages()
 
     return {"status": "ok"}
+
+@router.get("/read_chat")
+async def read_chats(chat_id=settings.avito_test_chat_id):
+    return await read_chat(chat_id=chat_id)
+
+@router.get("/test")
+async def test(chat_id=settings.avito_test_chat_id):
+    return await has_replied(chat_id=chat_id)
+    
