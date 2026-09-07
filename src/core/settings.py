@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     avito_account_id: int = 0
     avito_access_token: str = ""
     avito_test_chat_id: str = ""
+    avito_client_id: str = ""
+    avito_client_secret: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
