@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings",
     "httpx>=0.28.1",
     "greenlet>=3.5.5",
+    "openai>=3.8.0",
 ]
 
 [build-system]
