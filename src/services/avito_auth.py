@@ -11,7 +11,7 @@ class AvitoAuth:
         self.access_token: str | None = None
         self.expires_at: datetime | None = None
 
-    async def get_access_token(self) -> str:
+    async def get_access_token(self) -> str | None:
         """
         Возвращает действующий access token.
 
@@ -33,7 +33,7 @@ class AvitoAuth:
         # Обновляем токен за 5 минут до истечения
         return now < self.expires_at - timedelta(minutes=5)
 
-    async def _get_new_token(self) -> str:
+    async def _get_new_token(self) -> str | None:
         url = "https://api.avito.ru/token/"
 
         data = {
