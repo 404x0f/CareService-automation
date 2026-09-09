@@ -1,48 +1,83 @@
 
+from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert
 
+from src.core.dependencies import SessionDep
 from src.core.settings import settings
+from src.models.chat_processing import ChatPhase, ChatProcessingState, IncomingMessage
 from src.services.avito import avito_service
 
 router = APIRouter(
     prefix="/api/avito",
 )
 
+DEBOUNCE_SECONDS = 20
+
 
 @router.post("/webhook")
 async def avito_webhook(
     data: dict[str, Any],
-    background_tasks: BackgroundTasks,
+    session: SessionDep,
 ):
     payload = data.get("payload", {})
 
     if payload.get("type") != "message":
-        return {"ok": True}
+        return {"ok": True, "status": "ignored"}
 
     message = payload.get("value", {})
 
     if message.get("author_id") == settings.avito_account_id:
-        return {"ok": True}
-
-    chat_id = message["chat_id"]
-    message_id = message.get("id") or message.get("message_id")
-    user_message = message.get("content", {}).get("text")
-
-    if not message_id or not user_message:
         return {"ok": True, "status": "ignored"}
 
-    message_id = str(message_id)
-    if not await avito_service.reserve_message(message_id):
-        return {"ok": True, "status": "duplicate"}
+    chat_id = message.get("chat_id")
+    message_id = message.get("id") or message.get("message_id")
+    user_message = (message.get("content", {}).get("text") or "").strip()
 
-    background_tasks.add_task(
-        avito_service.generate_and_send_reply,
-        message_id,
-        chat_id,
-        user_message,
-    )
+    if not chat_id or not message_id or not user_message:
+        return {"ok": True, "status": "ignored"}
+
+    chat_id = str(chat_id)
+    message_id = str(message_id)
+
+    debounce_until = func.now() + timedelta(seconds=DEBOUNCE_SECONDS)
+
+    async with session.begin():
+        message_result = await session.execute(
+            insert(IncomingMessage)
+            .values(
+                avito_message_id=message_id,
+                chat_id=chat_id,
+                text=user_message,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[IncomingMessage.avito_message_id]
+            )
+            .returning(IncomingMessage.id)
+        )
+
+        if message_result.scalar_one_or_none() is None:
+            return {"ok": True, "status": "duplicate"}
+
+        await session.execute(
+            insert(ChatProcessingState)
+            .values(
+                chat_id=chat_id,
+                phase=ChatPhase.COLLECTING,
+                debounce_until=debounce_until,
+            )
+            .on_conflict_do_update(
+                index_elements=[ChatProcessingState.chat_id],
+                set_={
+                    "debounce_until": debounce_until,
+                    "updated_at": func.now(),
+                },
+            )
+        )
+
     return {"ok": True, "status": "accepted"}
 
 

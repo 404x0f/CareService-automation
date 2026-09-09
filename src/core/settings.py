@@ -16,7 +16,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     openrouter_api_key: str = ""
-    openrouter_base_url:str = ""
+    openrouter_base_url: str = ""
+
+    telegram_bot_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

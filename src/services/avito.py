@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from src.core.settings import settings
 from src.services.ai_service import ai_service
 from src.services.avito_auth import avito_auth
+from src.utils.work_time import is_working_time
 
 logger = logging.getLogger(__name__)
 PROCESSED_MESSAGE_TTL_SECONDS = 24 * 60 * 60
@@ -150,7 +151,6 @@ class AvitoService:
         async with processed_messages_lock:
             processed_messages.pop(message_id, None)
 
-
     async def generate_and_send_reply(
         self,
         message_id: str,
@@ -159,7 +159,9 @@ class AvitoService:
     ) -> None:
         try:
             reply = await ai_service.generate_reply(user_message=user_message)
+
             # await avito_service.send_message(chat_id=chat_id, text=reply)
+            # TODO: тут нужно реализовать логику с ботом
             return print(reply)
         except Exception:
             await self.release_message(message_id)

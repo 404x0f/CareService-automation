@@ -5,9 +5,9 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from src import models  # noqa: F401
 from src.core.base_model import Base
 from src.core.settings import settings
-from src.models import AvitoChat  # noqa
 
 config = context.config
 config.set_main_option('sqlalchemy.url', settings.database_url)
