@@ -44,6 +44,16 @@ services:
       - ./src:/app/src
       - ./logs:/app/logs
 
+  bot:
+    build: .
+    restart: unless-stopped
+    command: uv run python -m src.bot.main
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+
 volumes:
   postgres_data:
 
