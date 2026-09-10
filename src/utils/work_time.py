@@ -1,16 +1,20 @@
-from datetime import datetime, time
-from zoneinfo import ZoneInfo
+# from datetime import datetime, time
+# from zoneinfo import ZoneInfo
 
-MSK = ZoneInfo("Europe/Moscow")
+# MSK = ZoneInfo("Europe/Moscow")
 
 
 def is_working_time() -> bool:
-    now = datetime.now(MSK)
+    # На время тестов ии не может писать в чат самостоятельно.
 
-    if now.weekday() >= 5:
-        return False
 
-    work_start = time(9, 0)
-    work_end = time(18, 0)
+    # now = datetime.now(MSK)
 
-    return work_start <= now.time() < work_end
+    # if now.weekday() >= 5:
+    #     return False
+
+    # work_start = time(9, 0)
+    # work_end = time(18, 0)
+
+    # return work_start <= now.time() < work_end
+    return True
