@@ -21,6 +21,8 @@ from src.models.chat_processing import (
     IncomingMessage,
     MessageBatch,
     MessageStatus,
+    ReplyCandidate,
+    ReplyCandidateStatus,
 )
 from src.services.ai_service import ai_service
 from src.services.avito import avito_service
@@ -109,16 +111,99 @@ async def _process_chat(chat_id: str) -> None:
         await _handle_ai_failure(chat_id, batch_id, lease_token)
         return
 
-    # 3. Отправка в Авито (вне транзакции)
-    try:
-        # await avito_service.send_message(chat_id=chat_id, text=reply_text)
-    except Exception:
-        logger.exception("Авито не принял ответ chat_id=%s batch_id=%s", chat_id, batch_id)
-        await _handle_send_failure(chat_id, batch_id, lease_token)
+    # 3. Проверка рабочего времени
+    from src.utils.work_time import is_working_time
+    
+    if not is_working_time():
+        # Нерабочее время — отправляем сразу без модерации
+        try:
+            await avito_service.send_message(
+                chat_id=chat_id,
+                text=reply_text,
+            )
+            # Успех: помечаем batch как отправленный
+            async with session_maker() as session, session.begin():
+                state = await session.get(
+                    ChatProcessingState, chat_id, with_for_update=True
+                )
+                if state is None or state.lease_token != lease_token:
+                    return
+
+                await session.execute(
+                    update(IncomingMessage)
+                    .where(IncomingMessage.batch_id == batch_id)
+                    .values(status=MessageStatus.PROCESSED)
+                )
+                await session.execute(
+                    update(MessageBatch)
+                    .where(MessageBatch.id == batch_id)
+                    .values(
+                        status=BatchStatus.SENT,
+                        completed_at=_utcnow(),
+                    )
+                )
+
+                state.phase = ChatPhase.COLLECTING
+                state.active_batch_id = None
+                state.lease_token = None
+                state.lease_until = None
+                state.debounce_until = None
+
+            logger.info(
+                "Batch %s chat_id=%s отправлен в Авито (нерабочее время).",
+                batch_id, chat_id,
+            )
+        except Exception:
+            logger.exception(
+                "Не удалось отправить в Авито (нерабочее время) chat_id=%s batch_id=%s",
+                chat_id, batch_id,
+            )
+            await _handle_send_failure(chat_id, batch_id, lease_token)
         return
 
-    # 4. Сохранить успех
-    await _mark_success(chat_id, batch_id, lease_token, messages)
+    # 4. Рабочее время: сохранить ReplyCandidate и отправить на модерацию в Telegram
+    async with session_maker() as session, session.begin():
+            state = await session.get(
+                ChatProcessingState, chat_id, with_for_update=True
+            )
+            if state is None or state.lease_token != lease_token:
+                return
+
+            candidate = ReplyCandidate(
+                batch_id=batch_id,
+                chat_id=chat_id,
+                text=reply_text,
+                status=ReplyCandidateStatus.PENDING_APPROVAL,
+            )
+            session.add(candidate)
+            await session.flush()
+
+            state.phase = ChatPhase.WAITING_APPROVAL
+            candidate_id: int = candidate.id
+
+    # 5. Отправить в Telegram на модерацию (вне транзакции)
+    from src.bot.main import send_for_moderation
+    tg_message_id = await send_for_moderation(
+        candidate_id=candidate_id,
+        chat_id=chat_id,
+        text=reply_text,
+        user_message=combined_text,
+    )
+
+    if tg_message_id is not None:
+        async with session_maker() as session, session.begin():
+                cand = await session.get(ReplyCandidate, candidate_id)
+                if cand:
+                    cand.telegram_message_id = tg_message_id
+        logger.info(
+            "Batch %s chat_id=%s отправлен на модерацию, tg_msg=%s.",
+            batch_id, chat_id, tg_message_id,
+        )
+    else:
+        logger.error(
+            "Не удалось отправить batch %s chat_id=%s в Telegram.",
+            batch_id, chat_id,
+        )
 
 
 async def _handle_ai_failure(
@@ -127,8 +212,7 @@ async def _handle_ai_failure(
     lease_token: str,
 ) -> None:
     """AI упал: batch=rejected, сообщения назад в pending, retry через 5 с."""
-    async with session_maker() as session:
-        async with session.begin():
+    async with session_maker() as session, session.begin():
             state = await session.get(
                 ChatProcessingState, chat_id, with_for_update=True
             )
@@ -167,8 +251,7 @@ async def _handle_send_failure(
         batch_id,
         chat_id,
     )
-    async with session_maker() as session:
-        async with session.begin():
+    async with session_maker() as session, session.begin():
             state = await session.get(
                 ChatProcessingState, chat_id, with_for_update=True
             )
@@ -203,8 +286,7 @@ async def _mark_success(
     messages: list[IncomingMessage],
 ) -> None:
     """Ответ отправлен: batch=sent, сообщения=processed, чат в collecting."""
-    async with session_maker() as session:
-        async with session.begin():
+    async with session_maker() as session, session.begin():
             state = await session.get(
                 ChatProcessingState, chat_id, with_for_update=True
             )
@@ -241,8 +323,7 @@ async def _mark_success(
 
 async def _recover_stale_leases() -> None:
     """Восстанавливает зависшие batch (lease_until истёк)."""
-    async with session_maker() as session:
-        async with session.begin():
+    async with session_maker() as session, session.begin():
             result = await session.execute(
                 select(ChatProcessingState)
                 .where(
@@ -282,7 +363,7 @@ async def _recover_stale_leases() -> None:
 
 
 async def run_worker() -> None:
-    """Основной цикл worker-а."""
+    """Основной цикл worker-а, запускается параллельно с Telegram-ботом."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -292,12 +373,10 @@ async def run_worker() -> None:
     iteration = 0
     while True:
         try:
-            # Каждые 10 итераций проверяем зависшие lease
             if iteration % 10 == 0:
                 await _recover_stale_leases()
 
-            async with session_maker() as session:
-                async with session.begin():
+            async with session_maker() as session, session.begin():
                     ready_chats = await _collect_ready_chats(session)
 
             if ready_chats:
@@ -313,6 +392,20 @@ async def run_worker() -> None:
         await asyncio.sleep(POLL_INTERVAL)
 
 
+async def main() -> None:
+    """Запускает worker и Telegram-бота параллельно."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    from src.bot.main import bot, dp
+    logger.info("Запуск worker + Telegram-бот.")
+    await asyncio.gather(
+        run_worker(),
+        dp.start_polling(bot, allowed_updates=["message", "callback_query"]),
+    )
+
+
 if __name__ == "__main__":
-    asyncio.run(run_worker())
+    asyncio.run(main())
 

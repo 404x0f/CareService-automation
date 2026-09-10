@@ -3,6 +3,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter
+from httpx import HTTPError
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 
@@ -15,7 +16,7 @@ router = APIRouter(
     prefix="/api/avito",
 )
 
-DEBOUNCE_SECONDS = 20
+DEBOUNCE_SECONDS = 1
 
 
 @router.post("/webhook")
@@ -42,6 +43,14 @@ async def avito_webhook(
 
     chat_id = str(chat_id)
     message_id = str(message_id)
+
+    try:
+        already_replied = await avito_service.has_replied(chat_id=chat_id)
+    except HTTPError:
+        already_replied = False
+
+    if already_replied:
+        return {"ok": True, "status": "ignored_already_replied"}
 
     debounce_until = func.now() + timedelta(seconds=DEBOUNCE_SECONDS)
 
