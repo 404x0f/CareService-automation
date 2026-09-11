@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     project_name: str = "FastAPI App"
-    api_prefix: str = "/api/v1"
+    api_prefix: str = ""
 
     database_url: str = ""
 
