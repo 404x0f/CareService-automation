@@ -1,4 +1,4 @@
-
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -11,6 +11,8 @@ from src.core.dependencies import SessionDep
 from src.core.settings import settings
 from src.models.chat_processing import ChatPhase, ChatProcessingState, IncomingMessage
 from src.services.avito import avito_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/avito",
@@ -43,6 +45,10 @@ async def avito_webhook(
 
     chat_id = str(chat_id)
     message_id = str(message_id)
+
+    logger.info(
+        f'Chat_id = {chat_id}, User_message = {user_message}'
+    )
 
     try:
         already_replied = await avito_service.has_replied(chat_id=chat_id)
@@ -89,17 +95,3 @@ async def avito_webhook(
 
     return {"ok": True, "status": "accepted"}
 
-
-@router.post("/send_message")
-async def send_message():
-    await avito_service.send_messages()
-
-    return {"status": "ok"}
-
-@router.get("/read_chat")
-async def read_chats(chat_id=settings.avito_test_chat_id):
-    return await avito_service.read_chat(chat_id=chat_id)
-
-@router.get("/test")
-async def test(chat_id=settings.avito_test_chat_id):
-    return await avito_service.has_replied(chat_id=chat_id)

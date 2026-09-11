@@ -44,16 +44,6 @@ services:
       - ./src:/app/src
       - ./logs:/app/logs
 
-  bot:
-    build: .
-    restart: unless-stopped
-    command: uv run python -m src.bot.main
-    depends_on:
-      postgres:
-        condition: service_healthy
-    env_file:
-      - .env
-
 volumes:
   postgres_data:
 
