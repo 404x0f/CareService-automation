@@ -115,16 +115,6 @@ class AvitoService:
 
         return response.json()
 
-    async def send_messages(self):
-        if not settings.avito_test_chat_id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Avito test chat is not configured",
-            )
-
-        return await self.send_message(settings.avito_test_chat_id, "test")
-
-
     async def reserve_message(self, message_id: str) -> bool:
         now = time.monotonic()
 
