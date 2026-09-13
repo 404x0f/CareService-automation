@@ -23,7 +23,7 @@ async def send_for_moderation(
     chat_id: str,
     text: str,
     user_message: str = "",
-) -> int | None:
+) -> list[int] | None:
     """
     Отправляет AI-ответ в Telegram-чат модератора.
     Возвращает telegram message_id или None при ошибке.
@@ -41,20 +41,29 @@ async def send_for_moderation(
         f"{user_block}"
         f"<b>Ответ AI:</b>\n{text}"
     )
+    message_ids = []
+    # TODO: добавить возможность нескольких чатов
+    # for moderator_chat_id in settings.telegram_moderator_chat_ids:
+    # пример для env TELEGRAM_MODERATOR_CHAT_IDS=[123456789,987654321,555555555]
+    for moderator_chat_id in settings.telegram_moderator_chat_ids:
+        try:
+            msg = await bot.send_message(
+                chat_id=moderator_chat_id,
+                text=message_text,
+                parse_mode="HTML",
+                reply_markup=approval_keyboard(candidate_id),
+            )
 
-    try:
-        msg = await bot.send_message(
-            chat_id=settings.telegram_moderator_chat_id,
-            text=message_text,
-            parse_mode="HTML",
-            reply_markup=approval_keyboard(candidate_id),
-        )
-        return msg.message_id
-    except Exception:
-        logger.exception(
-            "Не удалось отправить на модерацию candidate_id=%s", candidate_id
-        )
-        return None
+            message_ids.append(msg.message_id)
+        except Exception:
+            logger.exception(
+                "Не удалось отправить на модерацию "
+                "candidate_id=%s chat_id=%s",
+                candidate_id,
+                moderator_chat_id,
+            )
+
+    return message_ids
 
 
 async def main():
