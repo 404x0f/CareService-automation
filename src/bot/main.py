@@ -18,9 +18,10 @@ dp.include_router(start_router)
 dp.include_router(moderation_router)
 
 
+
 async def send_for_moderation(
     candidate_id: int,
-    chat_id: str,
+    chat_id: int,
     text: str,
     user_message: str = "",
 ) -> list[int] | None:
@@ -28,9 +29,9 @@ async def send_for_moderation(
     Отправляет AI-ответ в Telegram-чат модератора.
     Возвращает telegram message_id или None при ошибке.
     """
-    if not settings.telegram_moderator_chat_id:
+    if not settings.telegram_moderator_chat_ids:
         logger.error(
-            "TELEGRAM_MODERATOR_CHAT_ID не задан — не могу отправить на модерацию."
+            "TELEGRAM_MODERATOR_CHAT_IDS не задан — не могу отправить на модерацию."
         )
         return None
 
@@ -42,9 +43,6 @@ async def send_for_moderation(
         f"<b>Ответ AI:</b>\n{text}"
     )
     message_ids = []
-    # TODO: добавить возможность нескольких чатов
-    # for moderator_chat_id in settings.telegram_moderator_chat_ids:
-    # пример для env TELEGRAM_MODERATOR_CHAT_IDS=[123456789,987654321,555555555]
     for moderator_chat_id in settings.telegram_moderator_chat_ids:
         try:
             msg = await bot.send_message(
@@ -64,7 +62,6 @@ async def send_for_moderation(
             )
 
     return message_ids
-
 
 async def main():
     logging.basicConfig(
