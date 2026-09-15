@@ -1,5 +1,5 @@
-from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram import Bot, Router
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from src.bot.app.texts import START_MESSAGE

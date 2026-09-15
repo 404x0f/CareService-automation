@@ -393,16 +393,14 @@ async def run_worker() -> None:
 
 
 async def main() -> None:
-    """Запускает worker и Telegram-бота параллельно."""
+    """Запускает worker"""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    from src.bot.main import bot, dp
-    logger.info("Запуск worker + Telegram-бот.")
+    logger.info("Запуск worker")
     await asyncio.gather(
         run_worker(),
-        dp.start_polling(bot, allowed_updates=["message", "callback_query"]),
     )
 
 

@@ -19,7 +19,6 @@ class Settings(BaseSettings):
     openrouter_base_url: str = ""
 
     telegram_bot_token: str = ""
-    telegram_moderator_chat_id: str = ""
     telegram_moderator_chat_ids: list[int] = []
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)

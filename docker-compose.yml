@@ -43,6 +43,19 @@ services:
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
+    
+  bot:
+    build: .
+    container_name: careservice-bot
+    command: .venv/bin/python -m src.bot.main
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./logs:/app/logs
 
 volumes:
   postgres_data:
