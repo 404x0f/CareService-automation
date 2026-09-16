@@ -38,7 +38,7 @@ async def send_for_moderation(
     user_block = f"<b>Сообщение клиента:</b>\n{user_message}\n\n" if user_message else ""
     message_text = (
         f"💬 <b>Новый ответ на модерацию</b>\n\n"
-        f"<b>Чат Avito:</b> <code>{chat_id}</code>\n\n"
+        f"<b>Чат Avito:</b> <code>https://www.avito.ru/profile/messenger/channel/{chat_id}</code>\n\n"
         f"{user_block}"
         f"<b>Ответ AI:</b>\n{text}"
     )
