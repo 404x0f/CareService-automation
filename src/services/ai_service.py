@@ -33,7 +33,7 @@ class AIService:
     async def generate_reply(self, user_message: str) -> str:
 
         response = await self.client.chat.completions.create(
-            model="glm-5.3-flash",
+            model="deepseek-flash",
             messages=[
                 {
                     "role": "system",
