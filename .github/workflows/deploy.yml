@@ -10,7 +10,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to server
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload project
+        uses: burnett01/rsync-deployments@7.0.2
+        with:
+          switches: -avzr --delete
+          path: ./
+          remote_path: /var/www/careservice/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_KEY }}
+          exclude: |
+            .git
+            .github
+            .venv
+            __pycache__
+            *.pyc
+            .env
+            logs
+
+      - name: Deploy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -22,10 +43,7 @@ jobs:
 
             cd /var/www/careservice
 
-            echo "Pull latest changes"
-            git pull origin main
-
-            echo "Build Docker images"
+            echo "Build images"
             docker compose build
 
             echo "Start PostgreSQL"
@@ -34,10 +52,10 @@ jobs:
             echo "Run migrations"
             docker compose run --rm app alembic upgrade head
 
-            echo "Start application"
+            echo "Start services"
             docker compose up -d app worker bot
 
-            echo "Remove unused images"
+            echo "Cleanup"
             docker image prune -f
 
             echo "Deployment completed successfully"
