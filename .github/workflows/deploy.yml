@@ -1,0 +1,43 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+
+          script: |
+            set -e
+
+            cd /var/www/careservice
+
+            echo "Pull latest changes"
+            git pull origin main
+
+            echo "Build Docker images"
+            docker compose build
+
+            echo "Start PostgreSQL"
+            docker compose up -d postgres
+
+            echo "Run migrations"
+            docker compose run --rm app alembic upgrade head
+
+            echo "Start application"
+            docker compose up -d app worker bot
+
+            echo "Remove unused images"
+            docker image prune -f
+
+            echo "Deployment completed successfully"
