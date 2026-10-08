@@ -15,7 +15,7 @@ from src.services.avito import avito_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/api/avito",
+    prefix="/avito",
 )
 
 DEBOUNCE_SECONDS = 1
