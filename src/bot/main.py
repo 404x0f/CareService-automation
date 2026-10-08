@@ -34,7 +34,11 @@ async def send_for_moderation(
             "TELEGRAM_MODERATOR_CHAT_IDS не задан — не могу отправить на модерацию."
         )
         return None
-
+    logger.info(
+        "Сообщение пользователя: %s\nОтвет ИИ: %s\n",
+        user_message,
+        text
+    )
     user_block = f"<b>Сообщение клиента:</b>\n{user_message}\n\n" if user_message else ""
     message_text = (
         f"💬 <b>Новый ответ на модерацию</b>\n\n"

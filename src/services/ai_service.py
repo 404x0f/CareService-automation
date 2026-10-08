@@ -1,25 +1,18 @@
 import logging
-from pathlib import Path
 
 from openai import AsyncOpenAI
 
 from src.core.settings import settings
 
-# Добавлено: отдельный файл для пар "сообщение клиента - ответ ИИ".
-LOG_DIRECTORY = Path(__file__).resolve().parents[2] / "logs"
-LOG_DIRECTORY.mkdir(exist_ok=True)
-
 dialog_logger = logging.getLogger("ai_dialog")
 dialog_logger.setLevel(logging.INFO)
 dialog_logger.propagate = False
 
-if not dialog_logger.handlers:
-    dialog_handler = logging.FileHandler(
-        LOG_DIRECTORY / "ai_dialog.log",
-        encoding="utf-8",
-    )
-    dialog_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
-    dialog_logger.addHandler(dialog_handler)
+dialog_handler = logging.StreamHandler()
+dialog_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(message)s")
+)
+dialog_logger.addHandler(dialog_handler)
 
 
 class AIService:
