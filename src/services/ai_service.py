@@ -24,7 +24,6 @@ class AIService:
         )
 
     async def generate_reply(self, user_message: str) -> str:
-
         response = await self.client.chat.completions.create(
             model="deepseek-flash",
             messages=[
