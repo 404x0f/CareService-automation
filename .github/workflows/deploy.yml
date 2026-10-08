@@ -49,9 +49,6 @@ jobs:
             echo "Start PostgreSQL"
             docker compose up -d postgres
 
-            echo "Run migrations"
-            docker compose run --rm app .venv/bin/alembic upgrade head
-
             echo "Start services"
             docker compose up -d app worker bot
 
