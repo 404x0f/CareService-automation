@@ -41,7 +41,7 @@ jobs:
           script: |
             set -e
 
-            cd /var/www/careservice
+            cd /root/CareService-automation/
 
             echo "Build images"
             docker compose build
