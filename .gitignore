@@ -26,4 +26,3 @@ build/
 *.sqlite3
 logs/
 *.log
-alembic/versions/
