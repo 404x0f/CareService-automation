@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from uuid import UUID
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,17 +12,26 @@ from src.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=settings.telegram_bot_token)
+bot: Bot | None = None
 dp = Dispatcher(storage=MemoryStorage())
 
 dp.include_router(start_router)
 dp.include_router(moderation_router)
 
 
+def get_bot() -> Bot:
+    """Вернуть общий Telegram Bot без создания клиента при импорте модуля."""
+    global bot
+    if not settings.telegram_bot_token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
+    if bot is None:
+        bot = Bot(token=settings.telegram_bot_token)
+    return bot
+
 
 async def send_for_moderation(
-    candidate_id: int,
-    chat_id: int,
+    candidate_id: int | UUID,
+    chat_id: int | str,
     text: str,
     user_message: str = "",
 ) -> list[int] | None:
@@ -49,7 +59,7 @@ async def send_for_moderation(
     message_ids = []
     for moderator_chat_id in settings.telegram_moderator_chat_ids:
         try:
-            msg = await bot.send_message(
+            msg = await get_bot().send_message(
                 chat_id=moderator_chat_id,
                 text=message_text,
                 parse_mode="HTML",
@@ -67,12 +77,28 @@ async def send_for_moderation(
 
     return message_ids
 
+
+async def send_for_review(
+    review_id: UUID,
+    avito_chat_id: str,
+    client_text: str,
+    suggestion: str,
+) -> list[int] | None:
+    """Совместимый вход для нового worker workflow."""
+    return await send_for_moderation(
+        candidate_id=review_id,
+        chat_id=avito_chat_id,
+        text=suggestion,
+        user_message=client_text,
+    )
+
+
 async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    await dp.start_polling(bot)
+    await dp.start_polling(get_bot())
 
 
 if __name__ == "__main__":
