@@ -1,98 +1,306 @@
-"""Кнопки менеджера и ввод исправленного ответа в Telegram."""
+import logging
 
-from uuid import UUID
-
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy import update
 
-from src.core.settings import settings
-from src.services.manager_review import decide_review
+from src.core.dependencies import session_maker
+from src.models.chat_processing import (
+    BatchStatus,
+    ChatPhase,
+    ChatProcessingState,
+    IncomingMessage,
+    MessageBatch,
+    MessageStatus,
+    ReplyCandidate,
+    ReplyCandidateStatus,
+)
+from src.services.avito import avito_service
 
+logger = logging.getLogger(__name__)
 
 router = Router()
 
-# Сервис возвращает короткие статусы; менеджеру показываем понятные фразы.
-RESULT_TEXT = {
-    "sent": "Ответ отправлен в Avito.",
-    "cancelled": "Ответ отклонён. В Avito ничего не отправлено.",
-    "already_replied": "В чате уже есть ответ. Отправка отменена.",
-    "send_failed": "Не удалось отправить ответ в Avito. Попробуйте ещё раз.",
-    "already_handled": "Этот ответ уже обработан.",
-    "not_found": "Ответ не найден.",
-    "empty_reply": "Напишите непустой текст ответа.",
-}
 
-
-class EditingReview(StatesGroup):
-    """Состояние между нажатием «Изменить» и новым текстом менеджера."""
-
+class EditState(StatesGroup):
     waiting_for_text = State()
 
+@router.callback_query(F.data.startswith("approve:"))
+async def handle_approve(callback: CallbackQuery) -> None:
+    candidate_id = int(callback.data.split(":")[1])
 
-def is_manager_chat(chat_id: int) -> bool:
-    """Проверить, пришло ли действие из настроенного менеджерского чата."""
-    return chat_id in settings.telegram_moderator_chat_ids
+    async with session_maker() as session, session.begin():
+            candidate = await session.get(
+                ReplyCandidate,
+                candidate_id,
+            )
 
+            if candidate is None:
+                await callback.answer(
+                    "Кандидат не найден.",
+                    show_alert=True,
+                )
+                return
 
-@router.callback_query()
-async def review_action(callback: CallbackQuery, state: FSMContext) -> None:
-    """Разобрать кнопку review: исправить, отправить или отклонить."""
-    # Кнопки из других чатов не могут менять ответы клиентов.
-    if callback.message is None or not is_manager_chat(callback.message.chat.id):
-        await callback.answer("Этот чат не настроен для менеджеров.", show_alert=True)
-        return
+            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+                await callback.answer(
+                    f"Уже обработан: {candidate.status}",
+                    show_alert=True,
+                )
+                return
 
-    # callback_data хранит действие и UUID review: например approve:<uuid>.
+            candidate.status = ReplyCandidateStatus.SENDING
+
+            st = await session.get(
+                ChatProcessingState,
+                candidate.chat_id,
+            )
+
+            if st:
+                st.phase = ChatPhase.SENDING
+
+            saved_chat_id = candidate.chat_id
+            saved_text = candidate.text
+            saved_batch_id = candidate.batch_id
+
     try:
-        action, raw_id = (callback.data or "").split(":", 1)
-        review_id = UUID(raw_id)
-    except ValueError:
-        await callback.answer("Неверная кнопка.")
+        await avito_service.send_message(
+            chat_id=saved_chat_id,
+            text=saved_text,
+        )
+
+    except Exception:
+        logger.exception(
+            "Не удалось отправить в Авито candidate_id=%s",
+            candidate_id,
+        )
+
+        async with session_maker() as session, session.begin():
+                candidate = await session.get(
+                    ReplyCandidate,
+                    candidate_id,
+                )
+
+                if candidate:
+                    candidate.status = (
+                        ReplyCandidateStatus.PENDING_APPROVAL
+                    )
+
+                st = await session.get(
+                    ChatProcessingState,
+                    saved_chat_id,
+                )
+
+                if st:
+                    st.phase = ChatPhase.WAITING_APPROVAL
+
+        await callback.answer(
+            "❌ Ошибка отправки в Авито.",
+            show_alert=True,
+        )
         return
 
-    # Правка сначала ждёт текст; отправлять исходный черновик здесь нельзя.
-    if action == "edit":
-        await state.set_state(EditingReview.waiting_for_text)
-        await state.update_data(review_id=str(review_id))
-        await callback.answer()
-        await callback.message.answer("Напишите новый текст ответа одним сообщением.")
+    async with session_maker() as session, session.begin():
+            candidate = await session.get(
+                ReplyCandidate,
+                candidate_id,
+            )
+
+            if candidate:
+                candidate.status = ReplyCandidateStatus.SENT
+
+            await session.execute(
+                update(IncomingMessage)
+                .where(
+                    IncomingMessage.batch_id == saved_batch_id
+                )
+                .values(
+                    status=MessageStatus.PROCESSED
+                )
+            )
+
+            await session.execute(
+                update(MessageBatch)
+                .where(
+                    MessageBatch.id == saved_batch_id
+                )
+                .values(
+                    status=BatchStatus.SENT
+                )
+            )
+
+            st = await session.get(
+                ChatProcessingState,
+                saved_chat_id,
+            )
+
+            if st:
+                st.phase = ChatPhase.COLLECTING
+                st.active_batch_id = None
+                st.lease_token = None
+                st.lease_until = None
+                st.debounce_until = None
+
+    await callback.answer("✅ Отправлено в Авито!")
+
+    try:
+        await callback.message.edit_text(
+            callback.message.text + "\n\n<b>✅ ОТПРАВЛЕНО</b>",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    except Exception:
+        logger.exception(
+            "Не удалось обновить Telegram-сообщение"
+        )
+
+    logger.info(
+        "Candidate %s одобрен и отправлен в Авито.",
+        candidate_id,
+    )
+
+@router.callback_query(F.data.startswith("edit:"))
+async def handle_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    candidate_id = int(callback.data.split(":")[1])
+
+    async with session_maker() as session:
+        candidate = await session.get(ReplyCandidate, candidate_id)
+
+    if candidate is None:
+        await callback.answer("Кандидат не найден.", show_alert=True)
         return
 
-    # Другие действия этому обработчику не принадлежат.
-    if action == "reject":
-        action = "cancel"
-
-    if action not in {"approve", "cancel"}:
-        await callback.answer("Неизвестное действие.")
+    if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+        await callback.answer(
+            f"Уже обработан: {candidate.status}",
+            show_alert=True,
+        )
         return
 
-    # Отправка/отмена и проверка актуальности выполняются в сервисе.
-    result = await decide_review(review_id, action)
-    await callback.answer(RESULT_TEXT.get(result, result), show_alert=result != "sent")
-    # После завершённого решения удаляем кнопки, чтобы не нажать их повторно.
-    if result in {"sent", "cancelled", "already_replied", "already_handled"}:
-        await callback.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(EditState.waiting_for_text)
+    await state.update_data(
+        candidate_id=candidate_id,
+        original_message_id=callback.message.message_id,
+    )
+
+    await callback.answer()
+    await callback.message.answer(
+        f"✏️ Введите новый текст ответа для кандидата <b>#{candidate_id}</b>:\n\n"
+        f"<i>Текущий текст:</i>\n{candidate.text}",
+        parse_mode="HTML",
+    )
 
 
-@router.message(EditingReview.waiting_for_text)
-async def edited_review(message: Message, state: FSMContext) -> None:
-    """Принять исправленный текст и попросить сервис отправить именно его."""
-    # Текст из другого чата не должен попасть в менеджерское решение.
-    if not is_manager_chat(message.chat.id):
-        await message.answer("Этот чат не настроен для менеджеров.")
-        return
-
-    # Пустую правку не отправляем в Avito и продолжаем ждать текст.
-    text = (message.text or "").strip()
-    if not text:
-        await message.answer("Напишите непустой текст ответа.")
-        return
-
-    # FSM помнит UUID review после предыдущей кнопки «Изменить».
+@router.message(EditState.waiting_for_text)
+async def handle_new_text(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    result = await decide_review(UUID(data["review_id"]), "edit", text)
-    # После решения больше не ждём исправленный текст от этого менеджера.
+    candidate_id: int = data["candidate_id"]
+    new_text = (message.text or "").strip()
+
+    if not new_text:
+        await message.answer("Текст не может быть пустым. Попробуйте ещё раз.")
+        return
+
+    async with session_maker() as session, session.begin():
+            candidate = await session.get(
+                ReplyCandidate, candidate_id, with_for_update=True
+            )
+
+            if candidate is None:
+                await message.answer("Кандидат не найден.")
+                await state.clear()
+                return
+
+            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+                await message.answer(f"Уже обработан: {candidate.status}")
+                await state.clear()
+                return
+
+            candidate.text = new_text
+
     await state.clear()
-    await message.answer(RESULT_TEXT.get(result, result))
+    await message.answer(
+        f"✅ Текст обновлён для кандидата <b>#{candidate_id}</b>.\n\n"
+        f"Нажмите <b>✅ Отправить</b> в исходном сообщении для отправки в Авито.",
+        parse_mode="HTML",
+    )
+    logger.info("Candidate %s текст обновлён модератором.", candidate_id)
+
+
+@router.callback_query(F.data.startswith("reject:"))
+async def handle_reject(callback: CallbackQuery) -> None:
+    candidate_id = int(callback.data.split(":")[1])
+
+    async with session_maker() as session, session.begin():
+            candidate = await session.get(
+                ReplyCandidate,
+                candidate_id,
+            )
+
+            if candidate is None:
+                await callback.answer(
+                    "Кандидат не найден.",
+                    show_alert=True,
+                )
+                return
+
+            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+                await callback.answer(
+                    f"Уже обработан: {candidate.status}",
+                    show_alert=True,
+                )
+                return
+
+            candidate.status = ReplyCandidateStatus.REJECTED
+
+            await session.execute(
+                update(MessageBatch)
+                .where(
+                    MessageBatch.id == candidate.batch_id
+                )
+                .values(
+                    status=BatchStatus.REJECTED
+                )
+            )
+
+            await session.execute(
+                update(IncomingMessage)
+                .where(
+                    IncomingMessage.batch_id == candidate.batch_id
+                )
+                .values(
+                    status=MessageStatus.PROCESSED
+                )
+            )
+
+            st = await session.get(
+                ChatProcessingState,
+                candidate.chat_id,
+            )
+
+            if st:
+                st.phase = ChatPhase.COLLECTING
+                st.active_batch_id = None
+                st.lease_token = None
+                st.lease_until = None
+                st.debounce_until = None
+
+    await callback.answer("❌ Отклонено.")
+
+    try:
+        await callback.message.edit_text(
+            callback.message.text + "\n\n<b>❌ ОТКЛОНЕНО</b>",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    except Exception:
+        logger.exception(
+            "Не удалось обновить Telegram-сообщение"
+        )
+
+    logger.info(
+        "Candidate %s отклонён.",
+        candidate_id,
+    )

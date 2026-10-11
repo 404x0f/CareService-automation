@@ -8,6 +8,12 @@ from src.crud.chats import get_chat_for_update
 from src.crud.messages import list_chat_messages, record_sent_message
 from src.crud.reviews import create_review
 from src.models.chat import Chat
+from src.models.chat_processing import (
+    BatchStatus,
+    MessageBatch,
+    ReplyCandidate,
+    ReplyCandidateStatus,
+)
 from src.models.message import MessageDirection, MessageSource
 from src.models.reply_review import ReplyReviewState
 from src.services.ai_service import ai_service
@@ -29,7 +35,7 @@ async def request_manager_review(
     chat_id: UUID, client_text: str, suggestion: str
 ) -> None:
     """Сохранить предложение AI и показать его менеджеру в Telegram."""
-    from src.bot.main import send_for_review
+    from src.bot.main import send_for_moderation
     from src.services.manager_review import cancel_review
 
     async with session_maker() as session, session.begin():
@@ -39,9 +45,29 @@ async def request_manager_review(
         review = await create_review(session, chat, suggestion)
         review_id = review.id
         avito_chat_id = chat.avito_chat_id
+        batch = MessageBatch(
+            chat_id=avito_chat_id,
+            status=BatchStatus.WAITING_APPROVAL,
+        )
+        session.add(batch)
+        await session.flush()
+        candidate = ReplyCandidate(
+            batch_id=batch.id,
+            chat_id=avito_chat_id,
+            text=suggestion,
+            status=ReplyCandidateStatus.PENDING_APPROVAL,
+        )
+        session.add(candidate)
+        await session.flush()
+        candidate_id = candidate.id
 
     try:
-        await send_for_review(review_id, avito_chat_id, client_text, suggestion)
+        await send_for_moderation(
+            candidate_id=candidate_id,
+            chat_id=avito_chat_id,
+            text=suggestion,
+            user_message=client_text,
+        )
     except Exception:
         await cancel_review(review_id)
         raise
