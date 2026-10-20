@@ -12,7 +12,7 @@ from src.schemas.avito_webhook import AvitoMessageEvent
 from src.services.avito import avito_service
 
 
-REPLY_WAIT = timedelta(minutes=3)
+REPLY_WAIT = timedelta(seconds=settings.debounce_seconds)
 
 
 async def save_webhook_message(
