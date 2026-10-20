@@ -26,9 +26,9 @@ docker compose up --build
 
 API будет доступен на http://127.0.0.1:8000.
 
-При запуске Docker Compose сначала поднимает PostgreSQL, затем выполняет
-`alembic upgrade head` в сервисе `migrate`, и только после успешных миграций
-запускает `app`, `worker` и `bot`.
+Docker Compose ждёт успешной проверки готовности PostgreSQL перед запуском
+`app`, `worker` и `bot`. Эти сервисы используют один набор `POSTGRES_*`
+переменных; внутри Docker-сети хостом БД служит `postgres`.
 
 ### Migrations
 
@@ -37,9 +37,11 @@ alembic revision --autogenerate -m "migration message"
 alembic upgrade head
 ```
 
-Для локального запуска Alembic без Docker используйте `DATABASE_URL` с
-`localhost`. В контейнерах `DATABASE_URL` задаётся через Docker Compose и
-указывает на hostname `postgres`.
+Для локального запуска Alembic без Docker задайте `DATABASE_HOST=localhost`.
+В Docker Compose `DATABASE_HOST` для `app`, `worker` и `bot` переопределяется
+на hostname сервиса `postgres`. URL подключения собирается из `POSTGRES_*`
+через SQLAlchemy `URL.create`, который корректно обрабатывает спецсимволы в
+пароле.
 
 Если локальный Docker volume был создан со старой схемой или другими
 `POSTGRES_USER`/`POSTGRES_PASSWORD`, PostgreSQL сохранит эти старые настройки.

@@ -25,7 +25,10 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
@@ -37,7 +40,10 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
@@ -49,7 +55,10 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs

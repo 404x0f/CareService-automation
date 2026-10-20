@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_user: str
     postgres_password: str
-    postgres_port: int
+    postgres_port: int = 5432
 
     debounce_seconds: int = 0
     avito_account_id: int = 0
