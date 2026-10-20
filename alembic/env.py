@@ -10,7 +10,10 @@ from src.core.base_model import Base
 from src.core.settings import settings
 
 config = context.config
-config.set_main_option('sqlalchemy.url', settings.database_url)
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.resolved_database_url.render_as_string(hide_password=False).replace("%", "%%"),
+)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
