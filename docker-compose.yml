@@ -16,18 +16,6 @@ services:
       timeout: 5s
       retries: 10
 
-  migrate:
-    build: .
-    container_name: careservice-migrate
-    command: .venv/bin/alembic upgrade head
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   app:
     build: .
     container_name: careservice-app
@@ -38,9 +26,6 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
@@ -53,9 +38,6 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
@@ -68,9 +50,6 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     volumes:
       - ./src:/app/src
       - ./logs:/app/logs
