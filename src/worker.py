@@ -10,7 +10,7 @@ from src.services.reply_workflow import process_chat
 
 
 logger = logging.getLogger(__name__)
-
+HEARTBEAT_INTERVAL = 60
 
 async def process_safely(chat_id: UUID) -> None:
     """Обработать один чат, не останавливая worker при ошибке."""
@@ -24,6 +24,9 @@ async def process_safely(chat_id: UUID) -> None:
 
 async def run_worker() -> None:
     """Раз в секунду захватывать чаты с истёкшим waiting_until."""
+    logger.info("Worker loop started")
+    loop = asyncio.get_running_loop()
+    next_heartbeat = loop.time() + HEARTBEAT_INTERVAL
     while True:
         try:
             # В одной транзакции забираем чаты и обнуляем их таймер.
@@ -32,12 +35,17 @@ async def run_worker() -> None:
             await asyncio.gather(*(process_safely(chat_id) for chat_id in chat_ids))
         except Exception:
             logger.exception("Worker iteration failed")
+        if loop.time() >= next_heartbeat:
+                logger.info("Worker heartbeat: running")
+                next_heartbeat = loop.time() + HEARTBEAT_INTERVAL
         await asyncio.sleep(1)
+
 
 
 async def main() -> None:
     """Запустить только worker; Telegram polling живёт в src.bot.main."""
     logging.basicConfig(level=logging.INFO)
+    logger.info("Worker starting")
     await run_worker()
 
 
