@@ -9,8 +9,8 @@ async_engine = create_async_engine(
     url=settings.resolved_database_url,
     pool_size=5,
     pool_pre_ping=True,
-    echo=True,
-    echo_pool=True,
+    echo=False,
+    echo_pool=False,
     max_overflow=10,
 )
 
