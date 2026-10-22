@@ -210,12 +210,16 @@ async def handle_edit(
 
     await callback.answer()
 
-    await original_message.answer(
+    prompt_message = await original_message.answer(
         f"✏️ Введите новый текст ответа "
         f"для кандидата <b>#{candidate_id}</b>:\n\n"
         f"<i>Текущий текст:</i>\n"
         f"{html.escape(old_text)}",
         parse_mode="HTML",
+    )
+
+    await state.update_data(
+        prompt_message_id=prompt_message.message_id,
     )
 
 
@@ -241,7 +245,7 @@ async def handle_new_text(
     candidate_id: int = data["candidate_id"]
     original_message_id: int = data["original_message_id"]
     original_chat_id: int = data["original_chat_id"]
-
+    prompt_message_id: int = data["prompt_message_id"]
     # Проверяем кандидата и сохраняем новый текст.
     async with session_maker() as session, session.begin():
         candidate = await session.get(
@@ -310,11 +314,23 @@ async def handle_new_text(
         await state.clear()
         return
 
+    try:
+        await message.bot.delete_message(
+            chat_id=original_chat_id,
+            message_id=prompt_message_id,
+        )
+    except Exception:
+        logger.exception(
+            "Не удалось удалить сообщение запроса редактирования: "
+            "candidate_id=%s message_id=%s",
+            candidate_id,
+            prompt_message_id,
+        )
+
     await state.clear()
 
     await message.answer(
-        f"✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n"
-        "Исходное сообщение обновлено, кнопки модерации восстановлены.",
+        f"✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n",
         parse_mode="HTML",
     )
 
