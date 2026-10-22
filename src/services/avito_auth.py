@@ -6,7 +6,6 @@ from src.core.settings import settings
 
 
 class AvitoAuth:
-
     def __init__(self) -> None:
         self.access_token: str | None = None
         self.expires_at: datetime | None = None
@@ -34,12 +33,12 @@ class AvitoAuth:
         return now < self.expires_at - timedelta(minutes=5)
 
     async def _get_new_token(self) -> str | None:
-        url = "https://api.avito.ru/token/"
+        url = 'https://api.avito.ru/token/'
 
         data = {
-            "grant_type": "client_credentials",
-            "client_id": settings.avito_client_id,
-            "client_secret": settings.avito_client_secret,
+            'grant_type': 'client_credentials',
+            'client_id': settings.avito_client_id,
+            'client_secret': settings.avito_client_secret,
         }
 
         async with httpx.AsyncClient() as client:
@@ -52,13 +51,13 @@ class AvitoAuth:
 
         result = response.json()
 
-        self.access_token = result["access_token"]
+        self.access_token = result['access_token']
 
-        self.expires_at = (
-            datetime.now(timezone.utc)
-            + timedelta(seconds=result["expires_in"])
+        self.expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=result['expires_in']
         )
 
         return self.access_token
+
 
 avito_auth = AvitoAuth()

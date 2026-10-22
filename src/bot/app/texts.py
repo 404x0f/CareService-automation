@@ -1,6 +1,5 @@
 START_MESSAGE = (
-    "👋 Бот модерации CareService запущен.\n"
-    "Ваш chat_id: <code>{chat_id}</code>"
+    '👋 Бот модерации CareService запущен.\nВаш chat_id: <code>{chat_id}</code>'
 )
 
 HELP_MESSAGE = """

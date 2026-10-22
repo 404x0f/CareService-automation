@@ -11,6 +11,8 @@ from sqlalchemy import select, update
 from src.bot.app.keyboards.moderation import approval_keyboard
 from src.bot.app.utils.text_formater import format_moderation_message
 from src.core.dependencies import session_maker
+from src.crud.messages import list_chat_messages
+from src.models.chat import Chat
 from src.models.chat_processing import (
     BatchStatus,
     ChatPhase,
@@ -21,55 +23,55 @@ from src.models.chat_processing import (
     ReplyCandidate,
     ReplyCandidateStatus,
 )
-from src.services.avito import avito_service
-from src.crud.messages import list_chat_messages
-from src.models.chat import Chat
 from src.models.message import MessageDirection
+from src.services.avito import avito_service
 
 logger = logging.getLogger(__name__)
 
 router = Router()
 
+
 class EditState(StatesGroup):
     waiting_for_text = State()
 
-@router.callback_query(F.data.startswith("approve:"))
+
+@router.callback_query(F.data.startswith('approve:'))
 async def handle_approve(callback: CallbackQuery) -> None:
-    candidate_id = int(callback.data.split(":")[1])
+    candidate_id = int(callback.data.split(':')[1])
 
     async with session_maker() as session, session.begin():
-            candidate = await session.get(
-                ReplyCandidate,
-                candidate_id,
+        candidate = await session.get(
+            ReplyCandidate,
+            candidate_id,
+        )
+
+        if candidate is None:
+            await callback.answer(
+                'Кандидат не найден.',
+                show_alert=True,
             )
+            return
 
-            if candidate is None:
-                await callback.answer(
-                    "Кандидат не найден.",
-                    show_alert=True,
-                )
-                return
-
-            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
-                await callback.answer(
-                    f"Уже обработан: {candidate.status}",
-                    show_alert=True,
-                )
-                return
-
-            candidate.status = ReplyCandidateStatus.SENDING
-
-            st = await session.get(
-                ChatProcessingState,
-                candidate.chat_id,
+        if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+            await callback.answer(
+                f'Уже обработан: {candidate.status}',
+                show_alert=True,
             )
+            return
 
-            if st:
-                st.phase = ChatPhase.SENDING
+        candidate.status = ReplyCandidateStatus.SENDING
 
-            saved_chat_id = candidate.chat_id
-            saved_text = candidate.text
-            saved_batch_id = candidate.batch_id
+        st = await session.get(
+            ChatProcessingState,
+            candidate.chat_id,
+        )
+
+        if st:
+            st.phase = ChatPhase.SENDING
+
+        saved_chat_id = candidate.chat_id
+        saved_text = candidate.text
+        saved_batch_id = candidate.batch_id
 
     try:
         await avito_service.send_message(
@@ -79,63 +81,18 @@ async def handle_approve(callback: CallbackQuery) -> None:
 
     except Exception:
         logger.exception(
-            "Не удалось отправить в Авито candidate_id=%s",
+            'Не удалось отправить в Авито candidate_id=%s',
             candidate_id,
         )
 
         async with session_maker() as session, session.begin():
-                candidate = await session.get(
-                    ReplyCandidate,
-                    candidate_id,
-                )
-
-                if candidate:
-                    candidate.status = (
-                        ReplyCandidateStatus.PENDING_APPROVAL
-                    )
-
-                st = await session.get(
-                    ChatProcessingState,
-                    saved_chat_id,
-                )
-
-                if st:
-                    st.phase = ChatPhase.WAITING_APPROVAL
-
-        await callback.answer(
-            "❌ Ошибка отправки в Авито.",
-            show_alert=True,
-        )
-        return
-
-    async with session_maker() as session, session.begin():
             candidate = await session.get(
                 ReplyCandidate,
                 candidate_id,
             )
 
             if candidate:
-                candidate.status = ReplyCandidateStatus.SENT
-
-            await session.execute(
-                update(IncomingMessage)
-                .where(
-                    IncomingMessage.batch_id == saved_batch_id
-                )
-                .values(
-                    status=MessageStatus.PROCESSED
-                )
-            )
-
-            await session.execute(
-                update(MessageBatch)
-                .where(
-                    MessageBatch.id == saved_batch_id
-                )
-                .values(
-                    status=BatchStatus.SENT
-                )
-            )
+                candidate.status = ReplyCandidateStatus.PENDING_APPROVAL
 
             st = await session.get(
                 ChatProcessingState,
@@ -143,40 +100,74 @@ async def handle_approve(callback: CallbackQuery) -> None:
             )
 
             if st:
-                st.phase = ChatPhase.COLLECTING
-                st.active_batch_id = None
-                st.lease_token = None
-                st.lease_until = None
-                st.debounce_until = None
+                st.phase = ChatPhase.WAITING_APPROVAL
 
-    await callback.answer("✅ Отправлено в Авито!")
+        await callback.answer(
+            '❌ Ошибка отправки в Авито.',
+            show_alert=True,
+        )
+        return
+
+    async with session_maker() as session, session.begin():
+        candidate = await session.get(
+            ReplyCandidate,
+            candidate_id,
+        )
+
+        if candidate:
+            candidate.status = ReplyCandidateStatus.SENT
+
+        await session.execute(
+            update(IncomingMessage)
+            .where(IncomingMessage.batch_id == saved_batch_id)
+            .values(status=MessageStatus.PROCESSED)
+        )
+
+        await session.execute(
+            update(MessageBatch)
+            .where(MessageBatch.id == saved_batch_id)
+            .values(status=BatchStatus.SENT)
+        )
+
+        st = await session.get(
+            ChatProcessingState,
+            saved_chat_id,
+        )
+
+        if st:
+            st.phase = ChatPhase.COLLECTING
+            st.active_batch_id = None
+            st.lease_token = None
+            st.lease_until = None
+            st.debounce_until = None
+
+    await callback.answer('✅ Отправлено в Авито!')
 
     try:
         await callback.message.edit_text(
-            callback.message.text + "\n\n<b>✅ ОТПРАВЛЕНО</b>",
-            parse_mode="HTML",
+            callback.message.text + '\n\n<b>✅ ОТПРАВЛЕНО</b>',
+            parse_mode='HTML',
             reply_markup=None,
         )
     except Exception:
-        logger.exception(
-            "Не удалось обновить Telegram-сообщение"
-        )
+        logger.exception('Не удалось обновить Telegram-сообщение')
 
     logger.info(
-        "Candidate %s одобрен и отправлен в Авито.",
+        'Candidate %s одобрен и отправлен в Авито.',
         candidate_id,
     )
 
-@router.callback_query(F.data.startswith("edit:"))
+
+@router.callback_query(F.data.startswith('edit:'))
 async def handle_edit(
     callback: CallbackQuery,
     state: FSMContext,
 ) -> None:
-    candidate_id = int(callback.data.split(":")[1])
+    candidate_id = int(callback.data.split(':')[1])
 
     if callback.message is None:
         await callback.answer(
-            "Исходное сообщение не найдено.",
+            'Исходное сообщение не найдено.',
             show_alert=True,
         )
         return
@@ -189,14 +180,14 @@ async def handle_edit(
 
         if candidate is None:
             await callback.answer(
-                "Кандидат не найден.",
+                'Кандидат не найден.',
                 show_alert=True,
             )
             return
 
         if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
             await callback.answer(
-                f"Уже обработан: {candidate.status}",
+                f'Уже обработан: {candidate.status}',
                 show_alert=True,
             )
             return
@@ -215,11 +206,11 @@ async def handle_edit(
     await callback.answer()
 
     prompt_message = await original_message.answer(
-        f"✏️ Введите новый текст ответа "
-        f"для кандидата <b>#{candidate_id}</b>:\n\n"
-        f"<i>Текущий текст:</i>\n"
-        f"{html.escape(old_text)}",
-        parse_mode="HTML",
+        f'✏️ Введите новый текст ответа '
+        f'для кандидата <b>#{candidate_id}</b>:\n\n'
+        f'<i>Текущий текст:</i>\n'
+        f'{html.escape(old_text)}',
+        parse_mode='HTML',
     )
 
     await state.update_data(
@@ -230,26 +221,24 @@ async def handle_edit(
 @router.message(
     EditState.waiting_for_text,
     F.text,
-    ~F.text.startswith("/"),
+    ~F.text.startswith('/'),
 )
 async def handle_new_text(
     message: Message,
     state: FSMContext,
 ) -> None:
-    new_text = (message.text or "").strip()
+    new_text = (message.text or '').strip()
 
     if not new_text:
-        await message.answer(
-            "Текст не может быть пустым. Попробуйте ещё раз."
-        )
+        await message.answer('Текст не может быть пустым. Попробуйте ещё раз.')
         return
 
     data = await state.get_data()
 
-    candidate_id: int = data["candidate_id"]
-    original_message_id: int = data["original_message_id"]
-    original_chat_id: int = data["original_chat_id"]
-    prompt_message_id: int = data["prompt_message_id"]
+    candidate_id: int = data['candidate_id']
+    original_message_id: int = data['original_message_id']
+    original_chat_id: int = data['original_chat_id']
+    prompt_message_id: int = data['prompt_message_id']
     # Проверяем кандидата и сохраняем новый текст.
     async with session_maker() as session, session.begin():
         candidate = await session.get(
@@ -259,14 +248,12 @@ async def handle_new_text(
         )
 
         if candidate is None:
-            await message.answer("Кандидат не найден.")
+            await message.answer('Кандидат не найден.')
             await state.clear()
             return
 
         if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
-            await message.answer(
-                f"Кандидат уже обработан: {candidate.status}"
-            )
+            await message.answer(f'Кандидат уже обработан: {candidate.status}')
             await state.clear()
             return
 
@@ -282,15 +269,15 @@ async def handle_new_text(
         chat = chat_result.scalar_one_or_none()
 
         if chat is None:
-            user_message = ""
+            user_message = ''
             logger.warning(
-                "Чат не найден: candidate_id=%s chat_id=%s",
+                'Чат не найден: candidate_id=%s chat_id=%s',
                 candidate_id,
                 chat_id,
             )
         else:
             dialog = await list_chat_messages(session, chat)
-            user_message = "\n".join(
+            user_message = '\n'.join(
                 item.text
                 for item in dialog
                 if item.direction == MessageDirection.INCOMING
@@ -304,9 +291,9 @@ async def handle_new_text(
             edited=True,
         )
     except TelegramBadRequest as exc:
-        if "message is not modified" in str(exc).lower():
+        if 'message is not modified' in str(exc).lower():
             logger.debug(
-                "Сообщение модерации не изменилось: candidate_id=%s",
+                'Сообщение модерации не изменилось: candidate_id=%s',
                 candidate_id,
             )
         else:
@@ -319,7 +306,7 @@ async def handle_new_text(
             chat_id=original_chat_id,
             message_id=original_message_id,
             text=edit_message_text,
-            parse_mode="HTML",
+            parse_mode='HTML',
             link_preview_options=LinkPreviewOptions(
                 is_disabled=True,
             ),
@@ -327,13 +314,13 @@ async def handle_new_text(
         )
     except Exception:
         logger.exception(
-            "Не удалось обновить сообщение модерации: candidate_id=%s",
+            'Не удалось обновить сообщение модерации: candidate_id=%s',
             candidate_id,
         )
 
         await message.answer(
-            "Текст сохранён в БД, но не удалось обновить "
-            "исходное сообщение модерации. Проверь логи."
+            'Текст сохранён в БД, но не удалось обновить '
+            'исходное сообщение модерации. Проверь логи.'
         )
         await state.clear()
         return
@@ -345,8 +332,8 @@ async def handle_new_text(
         )
     except Exception:
         logger.exception(
-            "Не удалось удалить сообщение запроса редактирования: "
-            "candidate_id=%s message_id=%s",
+            'Не удалось удалить сообщение запроса редактирования: '
+            'candidate_id=%s message_id=%s',
             candidate_id,
             prompt_message_id,
         )
@@ -354,88 +341,78 @@ async def handle_new_text(
     await state.clear()
 
     await message.answer(
-        f"✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n",
-        parse_mode="HTML",
+        f'✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n',
+        parse_mode='HTML',
     )
 
     logger.info(
-        "Candidate %s текст обновлён модератором.",
+        'Candidate %s текст обновлён модератором.',
         candidate_id,
     )
 
 
-@router.callback_query(F.data.startswith("reject:"))
+@router.callback_query(F.data.startswith('reject:'))
 async def handle_reject(callback: CallbackQuery) -> None:
-    candidate_id = int(callback.data.split(":")[1])
+    candidate_id = int(callback.data.split(':')[1])
 
     async with session_maker() as session, session.begin():
-            candidate = await session.get(
-                ReplyCandidate,
-                candidate_id,
+        candidate = await session.get(
+            ReplyCandidate,
+            candidate_id,
+        )
+
+        if candidate is None:
+            await callback.answer(
+                'Кандидат не найден.',
+                show_alert=True,
             )
+            return
 
-            if candidate is None:
-                await callback.answer(
-                    "Кандидат не найден.",
-                    show_alert=True,
-                )
-                return
-
-            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
-                await callback.answer(
-                    f"Уже обработан: {candidate.status}",
-                    show_alert=True,
-                )
-                return
-
-            candidate.status = ReplyCandidateStatus.REJECTED
-
-            await session.execute(
-                update(MessageBatch)
-                .where(
-                    MessageBatch.id == candidate.batch_id
-                )
-                .values(
-                    status=BatchStatus.REJECTED
-                )
+        if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+            await callback.answer(
+                f'Уже обработан: {candidate.status}',
+                show_alert=True,
             )
+            return
 
-            await session.execute(
-                update(IncomingMessage)
-                .where(
-                    IncomingMessage.batch_id == candidate.batch_id
-                )
-                .values(
-                    status=MessageStatus.PROCESSED
-                )
-            )
+        candidate.status = ReplyCandidateStatus.REJECTED
 
-            st = await session.get(
-                ChatProcessingState,
-                candidate.chat_id,
-            )
+        await session.execute(
+            update(MessageBatch)
+            .where(MessageBatch.id == candidate.batch_id)
+            .values(status=BatchStatus.REJECTED)
+        )
 
-            if st:
-                st.phase = ChatPhase.COLLECTING
-                st.active_batch_id = None
-                st.lease_token = None
-                st.lease_until = None
-                st.debounce_until = None
+        await session.execute(
+            update(IncomingMessage)
+            .where(IncomingMessage.batch_id == candidate.batch_id)
+            .values(status=MessageStatus.PROCESSED)
+        )
 
-    await callback.answer("❌ Отклонено.")
+        st = await session.get(
+            ChatProcessingState,
+            candidate.chat_id,
+        )
+
+        if st:
+            st.phase = ChatPhase.COLLECTING
+            st.active_batch_id = None
+            st.lease_token = None
+            st.lease_until = None
+            st.debounce_until = None
+
+    await callback.answer('❌ Отклонено.')
 
     try:
         await callback.message.edit_text(
-            callback.message.text + "\n\n<b>❌ ОТКЛОНЕНО</b>",
-            parse_mode="HTML",
+            callback.message.text + '\n\n<b>❌ ОТКЛОНЕНО</b>',
+            parse_mode='HTML',
             reply_markup=None,
         )
     except Exception:
-        logger.exception(
-            "Не удалось обновить Telegram-сообщение"
-        )
+        logger.exception('Не удалось обновить Telegram-сообщение')
 
     logger.info(
-        "Candidate %s отклонён.",
+        'Candidate %s отклонён.',
         candidate_id,
     )

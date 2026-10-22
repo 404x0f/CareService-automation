@@ -14,34 +14,36 @@ class ReplyReviewState(StrEnum):
     """Результат проверки предложения менеджером или ночной автоотправки."""
 
     # Черновик ещё можно подтвердить, исправить или отменить.
-    PENDING = "pending"
+    PENDING = 'pending'
     # Менеджер отправил предложенный текст без правки.
-    APPROVED = "approved"
+    APPROVED = 'approved'
     # Менеджер отправил свой исправленный текст.
-    EDITED = "edited"
+    EDITED = 'edited'
     # Черновик отменён или устарел; ничего по нему не отправлено.
-    CANCELLED = "cancelled"
+    CANCELLED = 'cancelled'
     # Ночная ветка отправила ответ без участия менеджера.
-    AUTO_SENT = "auto_sent"
+    AUTO_SENT = 'auto_sent'
 
 
 class ReplyReview(Base):
     """Черновик и финальная версия одного ответа для конкретного чата."""
 
-    __tablename__ = "reply_reviews"
+    __tablename__ = 'reply_reviews'
 
     # Внутренний UUID review передаётся в кнопках Telegram.
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     # Ответ относится к одной записи chats.
-    chat_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("chats.id"), nullable=False)
+    chat_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey('chats.id'), nullable=False)
     # AI предложил этот текст; он сохраняется и после правки менеджером.
     suggested_reply: Mapped[str] = mapped_column(Text, nullable=False)
     # Фактически отправленный текст; у отменённого черновика остаётся None.
     final_reply: Mapped[str | None] = mapped_column(Text)
     # По умолчанию созданный дневной черновик ждёт менеджера.
     state: Mapped[ReplyReviewState] = mapped_column(
-        String(32), default=ReplyReviewState.PENDING,
-        server_default=ReplyReviewState.PENDING, nullable=False
+        String(32),
+        default=ReplyReviewState.PENDING,
+        server_default=ReplyReviewState.PENDING,
+        nullable=False,
     )
     # UUID менеджера пока необязателен: таблицы менеджеров в текущей схеме нет.
     manager_id: Mapped[UUID | None] = mapped_column(Uuid)

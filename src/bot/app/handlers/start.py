@@ -1,5 +1,5 @@
-from aiogram import Bot, Router
-from aiogram.filters import Command, CommandStart
+from aiogram import Router
+from aiogram.filters import CommandStart
 from aiogram.types import Message
 
 from src.bot.app.texts import START_MESSAGE
@@ -13,5 +13,5 @@ async def cmd_start(message: Message) -> None:
         START_MESSAGE.format(
             chat_id=message.chat.id,
         ),
-        parse_mode="HTML",
+        parse_mode='HTML',
     )

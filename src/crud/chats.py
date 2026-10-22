@@ -46,7 +46,9 @@ async def claim_due_chats(session: AsyncSession, limit: int = 10) -> list[UUID]:
     """Забрать неотвеченные чаты, у которых закончился первый таймер."""
     result = await session.execute(
         select(Chat)
-        .where(Chat.answered.is_(False), Chat.waiting_until <= datetime.now(timezone.utc))
+        .where(
+            Chat.answered.is_(False), Chat.waiting_until <= datetime.now(timezone.utc)
+        )
         .order_by(Chat.waiting_until)
         .limit(limit)
         .with_for_update(skip_locked=True)

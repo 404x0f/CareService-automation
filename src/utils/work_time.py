@@ -7,7 +7,6 @@
 def is_working_time() -> bool:
     # На время тестов ии не может писать в чат самостоятельно.
 
-
     # now = datetime.now(MSK)
 
     # if now.weekday() >= 5:

@@ -4,14 +4,12 @@ from openai import AsyncOpenAI
 
 from src.core.settings import settings
 
-dialog_logger = logging.getLogger("ai_dialog")
+dialog_logger = logging.getLogger('ai_dialog')
 dialog_logger.setLevel(logging.INFO)
 dialog_logger.propagate = False
 
 dialog_handler = logging.StreamHandler()
-dialog_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(message)s")
-)
+dialog_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 dialog_logger.addHandler(dialog_handler)
 
 SYSTEM_PROMPT = """
@@ -95,7 +93,6 @@ SYSTEM_PROMPT = """
 
 
 class AIService:
-
     def __init__(self):
         self.client = AsyncOpenAI(
             api_key=settings.openai_api_key,
@@ -104,15 +101,12 @@ class AIService:
 
     async def generate_reply(self, user_message: str) -> str:
         response = await self.client.chat.completions.create(
-            model="deepseek-flash",
+            model='deepseek-flash',
             messages=[
+                {'role': 'system', 'content': SYSTEM_PROMPT},
                 {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": user_message,
+                    'role': 'user',
+                    'content': user_message,
                 },
             ],
         )
@@ -121,11 +115,12 @@ class AIService:
 
         # Добавлено: сохраняем в отдельный файл исходное сообщение и ответ.
         dialog_logger.info(
-            "Сообщение пользователя: %s\nОтвет ИИ: %s\n",
+            'Сообщение пользователя: %s\nОтвет ИИ: %s\n',
             user_message,
             answer,
         )
 
         return answer
+
 
 ai_service = AIService()

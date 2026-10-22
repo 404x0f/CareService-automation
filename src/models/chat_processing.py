@@ -8,34 +8,34 @@ from src.core.base_model import Base
 
 
 class MessageStatus(StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    PROCESSED = "processed"
+    PENDING = 'pending'
+    PROCESSING = 'processing'
+    PROCESSED = 'processed'
 
 
 class ChatPhase(StrEnum):
-    COLLECTING = "collecting"
-    GENERATING = "generating"
-    WAITING_APPROVAL = "waiting_approval"
-    SENDING = "sending"
+    COLLECTING = 'collecting'
+    GENERATING = 'generating'
+    WAITING_APPROVAL = 'waiting_approval'
+    SENDING = 'sending'
 
 
 class BatchStatus(StrEnum):
-    GENERATING = "generating"
-    WAITING_APPROVAL = "waiting_approval"
-    SENT = "sent"
-    REJECTED = "rejected"
+    GENERATING = 'generating'
+    WAITING_APPROVAL = 'waiting_approval'
+    SENT = 'sent'
+    REJECTED = 'rejected'
 
 
 class ReplyCandidateStatus(StrEnum):
-    PENDING_APPROVAL = "pending_approval"
-    SENDING = "sending"
-    SENT = "sent"
-    REJECTED = "rejected"
+    PENDING_APPROVAL = 'pending_approval'
+    SENDING = 'sending'
+    SENT = 'sent'
+    REJECTED = 'rejected'
 
 
 class IncomingMessage(Base):
-    __tablename__ = "incoming_messages"
+    __tablename__ = 'incoming_messages'
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -59,7 +59,7 @@ class IncomingMessage(Base):
     )
 
     batch_id: Mapped[int | None] = mapped_column(
-        ForeignKey("message_batches.id"),
+        ForeignKey('message_batches.id'),
         nullable=True,
         index=True,
     )
@@ -70,7 +70,7 @@ class IncomingMessage(Base):
 
 
 class ChatProcessingState(Base):
-    __tablename__ = "chat_processing_states"
+    __tablename__ = 'chat_processing_states'
 
     chat_id: Mapped[str] = mapped_column(
         String(255),
@@ -84,7 +84,7 @@ class ChatProcessingState(Base):
     debounce_until: Mapped[datetime | None]
 
     active_batch_id: Mapped[int | None] = mapped_column(
-        ForeignKey("message_batches.id"),
+        ForeignKey('message_batches.id'),
         nullable=True,
     )
 
@@ -101,7 +101,7 @@ class ChatProcessingState(Base):
 
 
 class MessageBatch(Base):
-    __tablename__ = "message_batches"
+    __tablename__ = 'message_batches'
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
@@ -124,14 +124,14 @@ class MessageBatch(Base):
 
 
 class ReplyCandidate(Base):
-    __tablename__ = "reply_candidates"
+    __tablename__ = 'reply_candidates'
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
     )
 
     batch_id: Mapped[int] = mapped_column(
-        ForeignKey("message_batches.id"),
+        ForeignKey('message_batches.id'),
         unique=True,
     )
 

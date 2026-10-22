@@ -1,5 +1,4 @@
 import asyncio
-import html
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -21,12 +20,11 @@ dp.include_router(start_router)
 dp.include_router(moderation_router)
 
 
-
 async def send_for_moderation(
     candidate_id: int,
     chat_id: int,
     text: str,
-    user_message: str = "",
+    user_message: str = '',
 ) -> list[int] | None:
     """
     Отправляет AI-ответ в Telegram-чат модератора.
@@ -34,15 +32,11 @@ async def send_for_moderation(
     """
     if not settings.telegram_moderator_chat_ids:
         logger.error(
-            "TELEGRAM_MODERATOR_CHAT_IDS не задан — не могу отправить на модерацию."
+            'TELEGRAM_MODERATOR_CHAT_IDS не задан — не могу отправить на модерацию.'
         )
         return None
 
-    logger.info(
-        "Сообщение пользователя: %s\nОтвет ИИ: %s\n",
-        user_message,
-        text
-    )
+    logger.info('Сообщение пользователя: %s\nОтвет ИИ: %s\n', user_message, text)
 
     message_text = format_moderation_message(
         chat_id=str(chat_id),
@@ -56,7 +50,7 @@ async def send_for_moderation(
             msg = await bot.send_message(
                 chat_id=moderator_chat_id,
                 text=message_text,
-                parse_mode="HTML",
+                parse_mode='HTML',
                 link_preview_options=LinkPreviewOptions(
                     is_disabled=True,
                 ),
@@ -65,21 +59,21 @@ async def send_for_moderation(
             message_ids.append(msg.message_id)
         except Exception:
             logger.exception(
-                "Не удалось отправить на модерацию "
-                "candidate_id=%s chat_id=%s",
+                'Не удалось отправить на модерацию candidate_id=%s chat_id=%s',
                 candidate_id,
                 moderator_chat_id,
             )
 
     return message_ids
 
+
 async def main():
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     )
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())

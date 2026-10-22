@@ -12,7 +12,7 @@ from src.core.base_model import Base
 class Chat(Base):
     """Одна запись на Avito chat ID."""
 
-    __tablename__ = "chats"
+    __tablename__ = 'chats'
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     avito_chat_id: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -22,12 +22,10 @@ class Chat(Base):
     )
     # После ответа нашей стороны входящие больше не обрабатываются.
     answered: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default=text("false"), nullable=False
+        Boolean, default=False, server_default=text('false'), nullable=False
     )
     # Задаётся только при создании чата первым входящим сообщением.
     # Worker обнуляет поле, когда забирает чат в работу.
     waiting_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    __table_args__ = (
-        UniqueConstraint("avito_chat_id", name="uq_chats_avito_chat_id"),
-    )
+    __table_args__ = (UniqueConstraint('avito_chat_id', name='uq_chats_avito_chat_id'),)

@@ -25,9 +25,9 @@ def _extract_avito_message_id(response: dict | None) -> str | None:
     """Return Avito response message ID without depending on one response shape."""
     if not isinstance(response, dict):
         return None
-    message = response.get("message")
-    message_id = message.get("id") if isinstance(message, dict) else None
-    message_id = message_id or response.get("id") or response.get("message_id")
+    message = response.get('message')
+    message_id = message.get('id') if isinstance(message, dict) else None
+    message_id = message_id or response.get('id') or response.get('message_id')
     return str(message_id) if message_id is not None else None
 
 
@@ -107,7 +107,7 @@ async def process_chat(chat_id: UUID) -> None:
         dialog = await list_chat_messages(session, chat)
         if not dialog:
             return
-        client_text = "\n".join(
+        client_text = '\n'.join(
             message.text
             for message in dialog
             if message.direction == MessageDirection.INCOMING

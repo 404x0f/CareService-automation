@@ -4,4 +4,4 @@ from src.models.chat import Chat
 from src.models.message import Message
 from src.models.reply_review import ReplyReview
 
-__all__ = ["Chat", "Message", "ReplyReview"]
+__all__ = ['Chat', 'Message', 'ReplyReview']

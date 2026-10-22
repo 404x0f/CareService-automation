@@ -8,23 +8,23 @@ from src.core.dependencies import session_maker
 from src.crud.chats import claim_due_chats, schedule_retry
 from src.services.reply_workflow import process_chat
 
-
 logger = logging.getLogger(__name__)
 HEARTBEAT_INTERVAL = 60
+
 
 async def process_safely(chat_id: UUID) -> None:
     """Обработать один чат, не останавливая worker при ошибке."""
     try:
         await process_chat(chat_id)
     except Exception:
-        logger.exception("Could not process chat %s", chat_id)
+        logger.exception('Could not process chat %s', chat_id)
         async with session_maker() as session, session.begin():
             await schedule_retry(session, chat_id)
 
 
 async def run_worker() -> None:
     """Раз в секунду захватывать чаты с истёкшим waiting_until."""
-    logger.info("Worker loop started")
+    logger.info('Worker loop started')
     loop = asyncio.get_running_loop()
     next_heartbeat = loop.time() + HEARTBEAT_INTERVAL
     while True:
@@ -34,21 +34,20 @@ async def run_worker() -> None:
                 chat_ids = await claim_due_chats(session)
             await asyncio.gather(*(process_safely(chat_id) for chat_id in chat_ids))
         except Exception:
-            logger.exception("Worker iteration failed")
+            logger.exception('Worker iteration failed')
         if loop.time() >= next_heartbeat:
-                logger.info("Worker heartbeat: running")
-                next_heartbeat = loop.time() + HEARTBEAT_INTERVAL
+            logger.info('Worker heartbeat: running')
+            next_heartbeat = loop.time() + HEARTBEAT_INTERVAL
         await asyncio.sleep(1)
-
 
 
 async def main() -> None:
     """Запустить только worker; Telegram polling живёт в src.bot.main."""
     logging.basicConfig(level=logging.INFO)
-    logger.info("Worker starting")
+    logger.info('Worker starting')
     await run_worker()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     # Команда `python -m src.worker` начинает асинхронный цикл.
     asyncio.run(main())
