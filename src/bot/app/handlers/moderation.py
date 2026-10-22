@@ -2,13 +2,13 @@ import html
 import logging
 
 from aiogram import F, Router
-from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
-from sqlalchemy import update
+from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
+from sqlalchemy import select, update
 
 from src.bot.app.keyboards.moderation import approval_keyboard
+from src.bot.app.utils.text_formater import format_moderation_message
 from src.core.dependencies import session_maker
 from src.models.chat_processing import (
     BatchStatus,
@@ -25,7 +25,6 @@ from src.services.avito import avito_service
 logger = logging.getLogger(__name__)
 
 router = Router()
-
 
 class EditState(StatesGroup):
     waiting_for_text = State()
@@ -207,8 +206,6 @@ async def handle_edit(
         candidate_id=candidate_id,
         original_message_id=original_message.message_id,
         original_chat_id=original_message.chat.id,
-        original_message_text=original_message.html_text,
-        old_candidate_text=html.escape(old_text),
     )
 
     await callback.answer()
@@ -244,8 +241,6 @@ async def handle_new_text(
     candidate_id: int = data["candidate_id"]
     original_message_id: int = data["original_message_id"]
     original_chat_id: int = data["original_chat_id"]
-    original_message_text: str = data["original_message_text"]
-    old_candidate_text: str = data["old_candidate_text"]
 
     # Проверяем кандидата и сохраняем новый текст.
     async with session_maker() as session, session.begin():
@@ -268,35 +263,38 @@ async def handle_new_text(
             return
 
         candidate.text = new_text
+        batch_id = candidate.batch_id
+        chat_id = candidate.chat_id
 
-    # Заменяем старый текст ответа на новый.
-    new_html_text = original_message_text.replace(
-        old_candidate_text,
-        html.escape(new_text),
-        1,
+        # Получаем исходные сообщения клиента из этого batch.
+        result = await session.execute(
+            select(IncomingMessage.text)
+            .where(IncomingMessage.batch_id == batch_id)
+            .order_by(IncomingMessage.received_at)
+        )
+        user_messages = result.scalars().all()
+
+    user_message = "\n".join(user_messages)
+
+    # Формируем обновлённое сообщение модерации.
+    edit_message_text = format_moderation_message(
+        chat_id=str(chat_id),
+        user_message=user_message,
+        answer_text=new_text,
+        edited=True,
     )
 
-    if new_html_text == original_message_text:
-        logger.error(
-            "Не удалось найти старый текст в сообщении модерации: "
-            "candidate_id=%s",
-            candidate_id,
-        )
-
-        await message.answer(
-            "Текст сохранён в БД, но исходное сообщение "
-            "не удалось обновить: старый текст не найден."
-        )
-        await state.clear()
-        return
-
-    # Обновляем исходное сообщение и восстанавливаем клавиатуру.
+    # Обновляем исходное сообщение, отключаем превью ссылки
+    # и восстанавливаем кнопки модерации.
     try:
         await message.bot.edit_message_text(
             chat_id=original_chat_id,
             message_id=original_message_id,
-            text=new_html_text,
+            text=edit_message_text,
             parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(
+                is_disabled=True,
+            ),
             reply_markup=approval_keyboard(candidate_id),
         )
     except Exception:
