@@ -7,6 +7,11 @@ def format_moderation_message(
     answer_text: str,
     edited: bool = False,
 ) -> str:
+    banner = (
+        "✏️ <b>Ответ AI изменён — повторная модерация</b>\n\n"
+        if edited
+        else "💬 <b>Новый ответ на модерацию</b>\n\n"
+    )
     user_block = (
         f"<b>Сообщение клиента:</b>\n"
         f"{html.escape(user_message)}\n\n"
@@ -21,7 +26,7 @@ def format_moderation_message(
     )
 
     return (
-        "💬 <b>Новый ответ на модерацию</b>\n\n"
+        f"{banner}"
         f'<b>Чат Avito:</b> <a href="https://www.avito.ru/profile/messenger/channel/'
         f'{html.escape(str(chat_id), quote=True)}">Открыть чат</a>\n\n'
         f"{user_block}"

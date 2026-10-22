@@ -2,6 +2,7 @@ import html
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, LinkPreviewOptions, Message
@@ -280,13 +281,30 @@ async def handle_new_text(
 
     user_message = "\n".join(user_messages)
 
-    # Формируем обновлённое сообщение модерации.
-    edit_message_text = format_moderation_message(
-        chat_id=str(chat_id),
-        user_message=user_message,
-        answer_text=new_text,
-        edited=True,
+    logger.info(
+        "Редактирование candidate_id=%s, batch_id=%s, "
+        "сообщений клиента найдено: %d, текст: %r",
+        candidate_id,
+        batch_id,
+        len(user_messages),
+        user_message,
     )
+    try:
+        # Формируем обновлённое сообщение модерации.
+        edit_message_text = format_moderation_message(
+            chat_id=str(chat_id),
+            user_message=user_message,
+            answer_text=new_text,
+            edited=True,
+        )
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            logger.debug(
+                "Сообщение модерации не изменилось: candidate_id=%s",
+                candidate_id,
+            )
+        else:
+            raise
 
     # Обновляем исходное сообщение, отключаем превью ссылки
     # и восстанавливаем кнопки модерации.

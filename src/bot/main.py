@@ -9,8 +9,8 @@ from aiogram.types import LinkPreviewOptions
 from src.bot.app.handlers.moderation import router as moderation_router
 from src.bot.app.handlers.start import router as start_router
 from src.bot.app.keyboards.moderation import approval_keyboard
-from src.core.settings import settings
 from src.bot.app.utils.text_formater import format_moderation_message
+from src.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ async def send_for_moderation(
     )
 
     message_text = format_moderation_message(
-            chat_id=str(chat_id),
-            user_message=user_message,
-            answer_text=text,
+        chat_id=str(chat_id),
+        user_message=user_message,
+        answer_text=text,
     )
 
     message_ids = []
