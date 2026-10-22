@@ -1,6 +1,8 @@
+import html
 import logging
 
 from aiogram import F, Router
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -162,71 +164,161 @@ async def handle_approve(callback: CallbackQuery) -> None:
     )
 
 @router.callback_query(F.data.startswith("edit:"))
-async def handle_edit(callback: CallbackQuery, state: FSMContext) -> None:
+async def handle_edit(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
     candidate_id = int(callback.data.split(":")[1])
 
-    async with session_maker() as session:
-        candidate = await session.get(ReplyCandidate, candidate_id)
-
-    if candidate is None:
-        await callback.answer("Кандидат не найден.", show_alert=True)
-        return
-
-    if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+    if callback.message is None:
         await callback.answer(
-            f"Уже обработан: {candidate.status}",
+            "Исходное сообщение не найдено.",
             show_alert=True,
         )
         return
 
+    async with session_maker() as session:
+        candidate = await session.get(
+            ReplyCandidate,
+            candidate_id,
+        )
+
+        if candidate is None:
+            await callback.answer(
+                "Кандидат не найден.",
+                show_alert=True,
+            )
+            return
+
+        if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+            await callback.answer(
+                f"Уже обработан: {candidate.status}",
+                show_alert=True,
+            )
+            return
+
+        old_text = candidate.text
+
+    original_message = callback.message
+
     await state.set_state(EditState.waiting_for_text)
     await state.update_data(
         candidate_id=candidate_id,
-        original_message_id=callback.message.message_id,
+        original_message_id=original_message.message_id,
+        original_chat_id=original_message.chat.id,
+        original_message_text=original_message.html_text,
+        old_candidate_text=html.escape(old_text),
     )
 
     await callback.answer()
-    await callback.message.answer(
-        f"✏️ Введите новый текст ответа для кандидата <b>#{candidate_id}</b>:\n\n"
-        f"<i>Текущий текст:</i>\n{candidate.text}",
+
+    await original_message.answer(
+        f"✏️ Введите новый текст ответа "
+        f"для кандидата <b>#{candidate_id}</b>:\n\n"
+        f"<i>Текущий текст:</i>\n"
+        f"{html.escape(old_text)}",
         parse_mode="HTML",
     )
 
 
 @router.message(EditState.waiting_for_text)
-async def handle_new_text(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    candidate_id: int = data["candidate_id"]
+async def handle_new_text(
+    message: Message,
+    state: FSMContext,
+) -> None:
     new_text = (message.text or "").strip()
 
     if not new_text:
-        await message.answer("Текст не может быть пустым. Попробуйте ещё раз.")
+        await message.answer(
+            "Текст не может быть пустым. Попробуйте ещё раз."
+        )
         return
 
+    data = await state.get_data()
+
+    candidate_id: int = data["candidate_id"]
+    original_message_id: int = data["original_message_id"]
+    original_chat_id: int = data["original_chat_id"]
+    original_message_text: str = data["original_message_text"]
+    old_candidate_text: str = data["old_candidate_text"]
+
     async with session_maker() as session, session.begin():
-            candidate = await session.get(
-                ReplyCandidate, candidate_id, with_for_update=True
+        candidate = await session.get(
+            ReplyCandidate,
+            candidate_id,
+            with_for_update=True,
+        )
+
+        if candidate is None:
+            await message.answer("Кандидат не найден.")
+            await state.clear()
+            return
+
+        if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
+            await message.answer(
+                f"Кандидат уже обработан: {candidate.status}"
             )
+            await state.clear()
+            return
 
-            if candidate is None:
-                await message.answer("Кандидат не найден.")
-                await state.clear()
-                return
+        # Обновляем текст кандидата в БД.
+        candidate.text = new_text
 
-            if candidate.status != ReplyCandidateStatus.PENDING_APPROVAL:
-                await message.answer(f"Уже обработан: {candidate.status}")
-                await state.clear()
-                return
+    # Обновляем исходное сообщение модерации.
+    new_html_text = original_message_text.replace(
+        old_candidate_text,
+        html.escape(new_text),
+        1,
+    )
 
-            candidate.text = new_text
+    if new_html_text == original_message_text:
+        logger.error(
+            "Не удалось найти старый текст в сообщении модерации: "
+            "candidate_id=%s",
+            candidate_id,
+        )
+
+        await message.answer(
+            "Текст сохранён в БД, но исходное сообщение "
+            "не удалось обновить автоматически. "
+            "Проверь форматирование сообщения модерации."
+        )
+        await state.clear()
+        return
+
+    try:
+        await message.bot.edit_message_text(
+            chat_id=original_chat_id,
+            message_id=original_message_id,
+            text=new_html_text,
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.exception(
+            "Не удалось обновить сообщение модерации: "
+            "candidate_id=%s",
+            candidate_id,
+        )
+
+        await message.answer(
+            "Текст сохранён в БД, но не удалось обновить "
+            "исходное сообщение модерации."
+        )
+        await state.clear()
+        return
 
     await state.clear()
+
     await message.answer(
-        f"✅ Текст обновлён для кандидата <b>#{candidate_id}</b>.\n\n"
-        f"Нажмите <b>✅ Отправить</b> в исходном сообщении для отправки в Авито.",
+        f"✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n"
+        "Кнопки модерации остаются в исходном сообщении.",
         parse_mode="HTML",
     )
-    logger.info("Candidate %s текст обновлён модератором.", candidate_id)
+
+    logger.info(
+        "Candidate %s текст обновлён модератором.",
+        candidate_id,
+    )
 
 
 @router.callback_query(F.data.startswith("reject:"))
