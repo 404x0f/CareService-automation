@@ -22,6 +22,9 @@ from src.models.chat_processing import (
     ReplyCandidateStatus,
 )
 from src.services.avito import avito_service
+from src.crud.messages import list_chat_messages
+from src.models.chat import Chat
+from src.models.message import MessageDirection
 
 logger = logging.getLogger(__name__)
 
@@ -272,23 +275,26 @@ async def handle_new_text(
         chat_id = candidate.chat_id
 
         # Получаем исходные сообщения клиента из этого batch.
-        result = await session.execute(
-            select(IncomingMessage.text)
-            .where(IncomingMessage.batch_id == batch_id)
-            .order_by(IncomingMessage.received_at)
+        # Получаем сообщения клиента из существующей таблицы messages.
+        chat_result = await session.execute(
+            select(Chat).where(Chat.avito_chat_id == chat_id)
         )
-        user_messages = result.scalars().all()
+        chat = chat_result.scalar_one_or_none()
 
-    user_message = "\n".join(user_messages)
-
-    logger.info(
-        "Редактирование candidate_id=%s, batch_id=%s, "
-        "сообщений клиента найдено: %d, текст: %r",
-        candidate_id,
-        batch_id,
-        len(user_messages),
-        user_message,
-    )
+        if chat is None:
+            user_message = ""
+            logger.warning(
+                "Чат не найден: candidate_id=%s chat_id=%s",
+                candidate_id,
+                chat_id,
+            )
+        else:
+            dialog = await list_chat_messages(session, chat)
+            user_message = "\n".join(
+                item.text
+                for item in dialog
+                if item.direction == MessageDirection.INCOMING
+            )
     try:
         # Формируем обновлённое сообщение модерации.
         edit_message_text = format_moderation_message(
