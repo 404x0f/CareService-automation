@@ -8,7 +8,7 @@ def format_moderation_message(
     edited: bool = False,
 ) -> str:
     banner = (
-        '✏️ <b>Ответ AI изменён — повторная модерация</b>\n\n'
+        '✏️ <b>Ответ AI изменён - повторная модерация</b>\n\n'
         if edited
         else '💬 <b>Новый ответ на модерацию</b>\n\n'
     )

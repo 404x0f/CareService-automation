@@ -32,7 +32,7 @@ async def send_for_moderation(
     """
     if not settings.telegram_moderator_chat_ids:
         logger.error(
-            'TELEGRAM_MODERATOR_CHAT_IDS не задан — не могу отправить на модерацию.'
+            'TELEGRAM_MODERATOR_CHAT_IDS не задан - не могу отправить на модерацию.'
         )
         return None
 
