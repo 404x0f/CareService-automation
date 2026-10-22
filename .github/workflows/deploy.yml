@@ -16,7 +16,16 @@ jobs:
       - name: Upload project
         uses: burnett01/rsync-deployments@7.0.2
         with:
-          switches: -avzr --delete --filter='protect .env'
+          switches: >-
+            -avzr
+            --filter='protect .env'
+            --exclude='.git/'
+            --exclude='.github/'
+            --exclude='.venv/'
+            --exclude='__pycache__/'
+            --exclude='*.pyc'
+            --exclude='.env'
+            --exclude='logs/'
           path: ./
           remote_path: /root/CareService-automation/
           remote_host: ${{ secrets.SSH_HOST }}
