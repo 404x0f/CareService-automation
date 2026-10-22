@@ -18,7 +18,7 @@ def format_moderation_message(
         else ''
     )
 
-    answer_title = 'Ответ AI (Измененный):' if edited else 'Ответ AI:'
+    answer_title = 'Измененный ответ:' if edited else 'Ответ AI:'
 
     return (
         f'{banner}'
