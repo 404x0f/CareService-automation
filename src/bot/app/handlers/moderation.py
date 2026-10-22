@@ -8,6 +8,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import update
 
+from src.bot.app.keyboards.moderation import approval_keyboard
 from src.core.dependencies import session_maker
 from src.models.chat_processing import (
     BatchStatus,
@@ -221,7 +222,11 @@ async def handle_edit(
     )
 
 
-@router.message(EditState.waiting_for_text)
+@router.message(
+    EditState.waiting_for_text,
+    F.text,
+    ~F.text.startswith("/"),
+)
 async def handle_new_text(
     message: Message,
     state: FSMContext,
@@ -242,6 +247,7 @@ async def handle_new_text(
     original_message_text: str = data["original_message_text"]
     old_candidate_text: str = data["old_candidate_text"]
 
+    # Проверяем кандидата и сохраняем новый текст.
     async with session_maker() as session, session.begin():
         candidate = await session.get(
             ReplyCandidate,
@@ -261,10 +267,9 @@ async def handle_new_text(
             await state.clear()
             return
 
-        # Обновляем текст кандидата в БД.
         candidate.text = new_text
 
-    # Обновляем исходное сообщение модерации.
+    # Заменяем старый текст ответа на новый.
     new_html_text = original_message_text.replace(
         old_candidate_text,
         html.escape(new_text),
@@ -280,29 +285,29 @@ async def handle_new_text(
 
         await message.answer(
             "Текст сохранён в БД, но исходное сообщение "
-            "не удалось обновить автоматически. "
-            "Проверь форматирование сообщения модерации."
+            "не удалось обновить: старый текст не найден."
         )
         await state.clear()
         return
 
+    # Обновляем исходное сообщение и восстанавливаем клавиатуру.
     try:
         await message.bot.edit_message_text(
             chat_id=original_chat_id,
             message_id=original_message_id,
             text=new_html_text,
             parse_mode="HTML",
+            reply_markup=approval_keyboard(candidate_id),
         )
     except Exception:
         logger.exception(
-            "Не удалось обновить сообщение модерации: "
-            "candidate_id=%s",
+            "Не удалось обновить сообщение модерации: candidate_id=%s",
             candidate_id,
         )
 
         await message.answer(
             "Текст сохранён в БД, но не удалось обновить "
-            "исходное сообщение модерации."
+            "исходное сообщение модерации. Проверь логи."
         )
         await state.clear()
         return
@@ -311,7 +316,7 @@ async def handle_new_text(
 
     await message.answer(
         f"✅ Текст кандидата <b>#{candidate_id}</b> обновлён.\n\n"
-        "Кнопки модерации остаются в исходном сообщении.",
+        "Исходное сообщение обновлено, кнопки модерации восстановлены.",
         parse_mode="HTML",
     )
 
